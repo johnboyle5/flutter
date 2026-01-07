@@ -112,10 +112,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _buildIssuerList(List<OidcIssuer> issuers) {
     if (issuers.isEmpty) {
-      return const Text(
-        'No identity providers configured.',
-        textAlign: TextAlign.center,
-      );
+      // TEMP: bypass auth when backend has no IdP configured
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          noAuthMode = true;
+          context.go('/');
+        }
+      });
+      return const SizedBox.shrink();
     }
 
     return Column(

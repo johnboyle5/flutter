@@ -102,7 +102,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       // CRITICAL: Use ref.read() for fresh auth state, not a captured variable.
       // This ensures the redirect always sees current auth status.
       final authState = ref.read(authProvider);
-      final isAuthenticated = authState is Authenticated;
+      // TEMP: bypass auth when backend has no IdP configured
+      final isAuthenticated = authState is Authenticated || noAuthMode;
       final isPublicRoute = _publicRoutes.contains(state.matchedLocation);
       debugPrint(
         'Router: isAuthenticated=$isAuthenticated, isPublic=$isPublicRoute',
