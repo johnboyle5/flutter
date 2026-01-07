@@ -182,6 +182,11 @@ class MockConfigNotifier extends Notifier<AppConfig> implements ConfigNotifier {
 
   @override
   void set(AppConfig value) => state = value;
+
+  @override
+  Future<void> setBaseUrl(String url) async {
+    state = state.copyWith(baseUrl: url);
+  }
 }
 
 /// Creates an override for configProvider with a mock config.

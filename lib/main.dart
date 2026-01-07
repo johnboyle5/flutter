@@ -4,6 +4,7 @@ import 'package:soliplex_frontend/app.dart';
 import 'package:soliplex_frontend/core/auth/auth_provider.dart';
 import 'package:soliplex_frontend/core/auth/auth_storage.dart';
 import 'package:soliplex_frontend/core/auth/web_auth_callback.dart';
+import 'package:soliplex_frontend/core/providers/config_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +23,9 @@ Future<void> main() async {
   // Clear stale keychain tokens on first launch after reinstall.
   // iOS preserves Keychain across uninstall/reinstall.
   await clearAuthStorageOnReinstall();
+
+  // Load saved config BEFORE app starts to avoid race conditions.
+  await initializeConfig();
 
   runApp(
     ProviderScope(

@@ -1,10 +1,54 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:soliplex_frontend/core/models/app_config.dart';
 
+const _baseUrlKey = 'backend_base_url';
+
+/// Initial config loaded before app starts.
+///
+/// Set this in main() via [initializeConfig] BEFORE runApp().
+AppConfig? _preloadedConfig;
+
+/// Loads and caches config from SharedPreferences.
+///
+/// Call this in main() BEFORE runApp() to ensure the correct URL
+/// is available from the first frame (avoids race conditions).
+Future<void> initializeConfig() async {
+  final prefs = await SharedPreferences.getInstance();
+  final savedUrl = prefs.getString(_baseUrlKey);
+  // ignore: avoid_print
+  print('Config: loaded savedUrl from storage: $savedUrl');
+  if (savedUrl != null && savedUrl.isNotEmpty) {
+    _preloadedConfig = AppConfig.defaults().copyWith(baseUrl: savedUrl);
+    // ignore: avoid_print
+    print('Config: using saved URL: $savedUrl');
+  } else {
+    // ignore: avoid_print
+    print('Config: no saved URL, using default');
+  }
+}
+
 /// Notifier for application configuration.
+///
+/// Persists baseUrl to SharedPreferences for cross-session persistence.
 class ConfigNotifier extends Notifier<AppConfig> {
   @override
-  AppConfig build() => AppConfig.defaults();
+  AppConfig build() {
+    return _preloadedConfig ?? AppConfig.defaults();
+  }
+
+  /// Update the backend URL and persist to storage.
+  Future<void> setBaseUrl(String url) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty || trimmed == state.baseUrl) return;
+
+    // Persist first
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_baseUrlKey, trimmed);
+
+    // Update state - this triggers rebuild of dependent providers
+    state = state.copyWith(baseUrl: trimmed);
+  }
 
   // ignore: use_setters_to_change_properties
   void set(AppConfig value) => state = value;
@@ -12,7 +56,7 @@ class ConfigNotifier extends Notifier<AppConfig> {
 
 /// Provider for application configuration.
 ///
-/// AM1: Returns default hardcoded config.
-/// AM7: Load from secure storage.
+/// Dependent providers (API, auth, etc.) automatically rebuild when
+/// baseUrl changes via ref.watch(configProvider).
 final configProvider =
     NotifierProvider<ConfigNotifier, AppConfig>(ConfigNotifier.new);
