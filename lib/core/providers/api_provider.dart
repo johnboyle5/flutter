@@ -137,17 +137,14 @@ final apiProvider = Provider<SoliplexApi>((ref) {
   final transport = ref.watch(httpTransportProvider);
   final urlBuilder = ref.watch(urlBuilderProvider);
 
-  final api = SoliplexApi(
+  // Note: We don't register ref.onDispose(api.close) because api.close()
+  // would close the shared transport. The transport is managed by
+  // httpTransportProvider, and the underlying client is managed by
+  // baseHttpClientProvider.
+  return SoliplexApi(
     transport: transport,
     urlBuilder: urlBuilder,
   );
-
-  // Register disposal callback
-  // Note: We don't close the transport here as it's managed by
-  // httpTransportProvider. We just clean up the API instance.
-  ref.onDispose(api.close);
-
-  return api;
 });
 
 /// Provider for the Soliplex HTTP client.
