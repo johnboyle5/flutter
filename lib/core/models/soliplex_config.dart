@@ -1,5 +1,6 @@
 import 'package:meta/meta.dart';
 import 'package:soliplex_frontend/core/models/features.dart';
+import 'package:soliplex_frontend/core/models/logo_config.dart';
 import 'package:soliplex_frontend/core/models/route_config.dart';
 import 'package:soliplex_frontend/core/models/theme_config.dart';
 
@@ -15,6 +16,7 @@ import 'package:soliplex_frontend/core/models/theme_config.dart';
 /// Example usage:
 /// ```dart
 /// final config = SoliplexConfig(
+///   logo: LogoConfig(assetPath: 'assets/my_logo.png'),
 ///   appName: 'MyBrand',
 ///   defaultBackendUrl: 'https://api.mybrand.com',
 ///   features: const Features(
@@ -25,8 +27,12 @@ import 'package:soliplex_frontend/core/models/theme_config.dart';
 /// ```
 @immutable
 class SoliplexConfig {
-  /// Creates a Soliplex configuration with sensible defaults.
+  /// Creates a Soliplex configuration.
+  ///
+  /// [logo] is required to ensure white-label apps explicitly configure
+  /// branding. Use [LogoConfig.soliplex] for the default Soliplex logo.
   const SoliplexConfig({
+    required this.logo,
     this.appName = 'Soliplex',
     this.defaultBackendUrl,
     this.oauthRedirectScheme,
@@ -62,6 +68,13 @@ class SoliplexConfig {
   /// Required for native builds. Ignored on web (uses origin-based redirect).
   final String? oauthRedirectScheme;
 
+  /// Logo configuration for branding.
+  ///
+  /// When running the app directly (not as a library), use a [LogoConfig]
+  /// without a package parameter. When white-label apps import this library
+  /// as a dependency, use [LogoConfig.soliplex] to load from bundled assets.
+  final LogoConfig logo;
+
   /// Feature flags controlling which functionality is available.
   final Features features;
 
@@ -76,6 +89,7 @@ class SoliplexConfig {
     String? appName,
     String? defaultBackendUrl,
     String? oauthRedirectScheme,
+    LogoConfig? logo,
     Features? features,
     ThemeConfig? theme,
     RouteConfig? routes,
@@ -84,6 +98,7 @@ class SoliplexConfig {
       appName: appName ?? this.appName,
       defaultBackendUrl: defaultBackendUrl ?? this.defaultBackendUrl,
       oauthRedirectScheme: oauthRedirectScheme ?? this.oauthRedirectScheme,
+      logo: logo ?? this.logo,
       features: features ?? this.features,
       theme: theme ?? this.theme,
       routes: routes ?? this.routes,
@@ -98,6 +113,7 @@ class SoliplexConfig {
           appName == other.appName &&
           defaultBackendUrl == other.defaultBackendUrl &&
           oauthRedirectScheme == other.oauthRedirectScheme &&
+          logo == other.logo &&
           features == other.features &&
           theme == other.theme &&
           routes == other.routes;
@@ -107,6 +123,7 @@ class SoliplexConfig {
         appName,
         defaultBackendUrl,
         oauthRedirectScheme,
+        logo,
         features,
         theme,
         routes,
@@ -117,6 +134,7 @@ class SoliplexConfig {
       'appName: $appName, '
       'defaultBackendUrl: $defaultBackendUrl, '
       'oauthRedirectScheme: $oauthRedirectScheme, '
+      'logo: $logo, '
       'features: $features, '
       'theme: $theme, '
       'routes: $routes)';
