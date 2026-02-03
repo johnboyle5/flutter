@@ -10,9 +10,9 @@ import 'package:soliplex_frontend/core/models/active_run_state.dart';
 import 'package:soliplex_frontend/core/providers/active_run_notifier.dart';
 import 'package:soliplex_frontend/core/providers/active_run_provider.dart';
 import 'package:soliplex_frontend/core/providers/api_provider.dart';
-import 'package:soliplex_frontend/core/providers/documents_provider.dart';
 import 'package:soliplex_frontend/core/providers/rooms_provider.dart';
 import 'package:soliplex_frontend/core/providers/selected_documents_provider.dart';
+import 'package:soliplex_frontend/core/providers/shell_config_provider.dart';
 import 'package:soliplex_frontend/core/providers/threads_provider.dart';
 import 'package:soliplex_frontend/features/chat/chat_panel.dart';
 import 'package:soliplex_frontend/features/chat/widgets/chat_input.dart';
@@ -112,7 +112,12 @@ Widget _createAppWithRouter({
   );
 
   return UncontrolledProviderScope(
-    container: ProviderContainer(overrides: overrides.cast()),
+    container: ProviderContainer(
+      overrides: [
+        shellConfigProvider.overrideWithValue(testSoliplexConfig),
+        ...overrides.cast(),
+      ],
+    ),
     child: MaterialApp.router(theme: testThemeData, routerConfig: router),
   );
 }
@@ -290,7 +295,7 @@ void main() {
               activeRunNotifierOverride(const IdleState()),
               // Override to avoid API call
               allMessagesProvider.overrideWith((ref) async => []),
-              documentsProvider(mockRoom.id).overrideWith((ref) async => []),
+              documentsProviderOverride(mockRoom.id, []),
             ],
           ),
         );
@@ -401,6 +406,7 @@ void main() {
               }),
               allMessagesProvider.overrideWith((ref) async => []),
               threadsProvider('test-room').overrideWith((ref) async => []),
+              documentsProviderOverride('test-room'),
             ],
           ),
         );
@@ -465,6 +471,7 @@ void main() {
               }),
               allMessagesProvider.overrideWith((ref) async => []),
               threadsProvider('test-room').overrideWith((ref) async => []),
+              documentsProviderOverride('test-room'),
             ],
           ),
         );
@@ -524,6 +531,7 @@ void main() {
               threadsProvider(
                 'test-room',
               ).overrideWith((ref) async => [existingThread]),
+              documentsProviderOverride('test-room'),
             ],
           ),
         );
@@ -565,7 +573,7 @@ void main() {
               currentThreadProvider.overrideWith((ref) => mockThread),
               activeRunNotifierOverride(const IdleState()),
               allMessagesProvider.overrideWith((ref) async => []),
-              documentsProvider(mockRoom.id).overrideWith((ref) async => []),
+              documentsProviderOverride(mockRoom.id, []),
             ],
           ),
         );
@@ -577,13 +585,9 @@ void main() {
         expect(find.byType(ActionChip), findsNWidgets(2));
       });
 
-      testWidgets('hides suggestions when thread has messages', (
-        tester,
-      ) async {
+      testWidgets('hides suggestions when thread has messages', (tester) async {
         // Arrange
-        final mockRoom = TestData.createRoom(
-          suggestions: ['How can I help?'],
-        );
+        final mockRoom = TestData.createRoom(suggestions: ['How can I help?']);
         final mockThread = TestData.createThread();
         final messages = [TestData.createMessage(text: 'Hello')];
 
@@ -595,7 +599,7 @@ void main() {
               currentThreadProvider.overrideWith((ref) => mockThread),
               activeRunNotifierOverride(const IdleState()),
               allMessagesProvider.overrideWith((ref) async => messages),
-              documentsProvider(mockRoom.id).overrideWith((ref) async => []),
+              documentsProviderOverride(mockRoom.id, []),
             ],
           ),
         );
@@ -608,9 +612,7 @@ void main() {
 
       testWidgets('hides suggestions when streaming', (tester) async {
         // Arrange
-        final mockRoom = TestData.createRoom(
-          suggestions: ['How can I help?'],
-        );
+        final mockRoom = TestData.createRoom(suggestions: ['How can I help?']);
         final mockThread = TestData.createThread();
         const conversation = domain.Conversation(
           threadId: 'test-thread',
@@ -627,7 +629,7 @@ void main() {
                 const RunningState(conversation: conversation),
               ),
               allMessagesProvider.overrideWith((ref) async => []),
-              documentsProvider(mockRoom.id).overrideWith((ref) async => []),
+              documentsProviderOverride(mockRoom.id, []),
             ],
           ),
         );
@@ -643,9 +645,7 @@ void main() {
       testWidgets('tapping suggestion sends message', (tester) async {
         // Arrange
         SharedPreferences.setMockInitialValues({});
-        final mockRoom = TestData.createRoom(
-          suggestions: ['How can I help?'],
-        );
+        final mockRoom = TestData.createRoom(suggestions: ['How can I help?']);
         final mockThread = TestData.createThread();
 
         late _TrackingActiveRunNotifier runNotifier;
@@ -667,6 +667,7 @@ void main() {
                 );
               }),
               allMessagesProvider.overrideWith((ref) async => []),
+              documentsProviderOverride(mockRoom.id),
             ],
           ),
         );
@@ -707,8 +708,7 @@ void main() {
                 }),
                 activeRunNotifierOverride(const IdleState()),
                 allMessagesProvider.overrideWith((ref) async => []),
-                documentsProvider(mockRoom.id)
-                    .overrideWith((ref) async => [doc]),
+                documentsProviderOverride(mockRoom.id, [doc]),
               ],
             ),
             child: MaterialApp(
@@ -772,8 +772,7 @@ void main() {
                 }),
                 activeRunNotifierOverride(const IdleState()),
                 allMessagesProvider.overrideWith((ref) async => []),
-                documentsProvider(mockRoom.id)
-                    .overrideWith((ref) async => [doc1, doc2]),
+                documentsProviderOverride(mockRoom.id, [doc1, doc2]),
               ],
             ),
             child: MaterialApp(
@@ -837,8 +836,7 @@ void main() {
                 }),
                 activeRunNotifierOverride(const IdleState()),
                 allMessagesProvider.overrideWith((ref) async => []),
-                documentsProvider(mockRoom.id)
-                    .overrideWith((ref) async => [doc]),
+                documentsProviderOverride(mockRoom.id, [doc]),
               ],
             ),
             child: MaterialApp(
@@ -890,8 +888,8 @@ void main() {
                 threadSelectionProviderOverride(const NewThreadIntent()),
                 activeRunNotifierOverride(const IdleState()),
                 allMessagesProvider.overrideWith((ref) async => []),
-                documentsProvider(room1.id).overrideWith((ref) async => [doc]),
-                documentsProvider(room2.id).overrideWith((ref) async => []),
+                documentsProviderOverride(room1.id, [doc]),
+                documentsProviderOverride(room2.id, []),
               ],
             ),
             child: MaterialApp(
