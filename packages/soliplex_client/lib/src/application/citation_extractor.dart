@@ -71,7 +71,21 @@ class CitationExtractor {
     if (currentLength <= previousLength) return [];
 
     try {
-      final haikuRagChat = HaikuRagChat.fromJson(currentData);
+      // citation_registry is required by fromJson but may be absent in
+      // STATE_DELTA events that only include qa_history.
+      if (!currentData.containsKey('citation_registry')) {
+        developer.log(
+          'BUG: haiku.rag.chat missing citation_registry. '
+          'Keys present: ${currentData.keys.toList()}',
+          name: 'soliplex_client.citation_extractor',
+          level: 900,
+        );
+      }
+      final normalizedData = {
+        'citation_registry': const <String, int>{},
+        ...currentData,
+      };
+      final haikuRagChat = HaikuRagChat.fromJson(normalizedData);
       final qaHistory = haikuRagChat.qaHistory ?? [];
 
       return qaHistory
