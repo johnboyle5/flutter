@@ -1,13 +1,13 @@
 ---
 name: patrol
-description: Run Patrol E2E integration tests on macOS, iOS, or Chrome. Use when writing, running, or debugging Patrol tests.
+description: Run Patrol E2E integration tests on macOS, iOS, Android, or Chrome. Use when writing, running, or debugging Patrol tests.
 argument-hint: "[test-file|all]"
 allowed-tools: Bash, Read, Edit, Write, Glob, Grep
 ---
 
 # Patrol E2E Test Skill
 
-Run and manage Patrol integration tests for this Flutter project (macOS, iOS, and Chrome).
+Run and manage Patrol integration tests for this Flutter project (macOS, iOS, Android, and Chrome).
 
 ## Running Tests
 
@@ -31,6 +31,8 @@ patrol test \
   --dart-define SOLIPLEX_BACKEND_URL=http://localhost:8000
 ```
 
+**First-time setup:** See [macOS Setup Guide](./setup/macos-setup.md) for entitlements and window constraints.
+
 ### iOS (simulator)
 
 Use a booted simulator's device ID or name. The `--ios` flag specifies the OS
@@ -52,6 +54,29 @@ patrol test \
 ```
 
 Use `xcrun simctl list devices booted` to find the device ID and OS version.
+
+**First-time setup:** See [iOS Setup Guide](./setup/ios-setup.md) for RunnerUITests target and simulator OS matching.
+
+### Android (emulator or device)
+
+Requires a booted emulator or connected device. Use the name/serial from `adb devices`.
+
+```bash
+# Boot emulator (if not running)
+export ANDROID_HOME=~/Library/Android/sdk
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+emulator -avd Patrol_Test_API_36 &
+
+# Run on Android emulator
+patrol test \
+  --device emulator-5554 \
+  --target integration_test/$ARGUMENTS \
+  --dart-define SOLIPLEX_BACKEND_URL=http://10.0.2.2:8000
+```
+
+**Note:** Android emulators use `10.0.2.2` to reach the host's `localhost`.
+
+**First-time setup:** See [Android Setup Guide](./setup/android-setup.md) for AVD creation, JDK, and Google APIs image requirement.
 
 ### Chrome (web)
 
@@ -79,6 +104,8 @@ patrol test \
   --dart-define SOLIPLEX_BACKEND_URL=http://localhost:8000
 ```
 
+**First-time setup:** See [Web Setup Guide](./setup/web-setup.md) for Node.js, CORS, and viewport details.
+
 If `$ARGUMENTS` is empty or "all", run against `integration_test/` (all tests).
 If `$ARGUMENTS` is a filename like `smoke_test.dart`, run that specific file.
 
@@ -90,73 +117,6 @@ Before running tests, verify:
 2. **patrol CLI is installed**: `patrol --version`
 3. **Code compiles**: Run `dart analyze integration_test/` first
 4. **test_bundle.dart is current**: Patrol auto-generates this — if tests are missing from the bundle, delete it and let `patrol test` regenerate
-
-## macOS-Specific Constraints
-
-### Window size is fixed (~800x600)
-
-The macOS test window runs BELOW the 840px desktop breakpoint (`SoliplexBreakpoints.desktop`). This means:
-
-- **HistoryPanel renders in the drawer**, not as an inline sidebar
-- `WidgetTester.setSurfaceSize()` does NOT work in integration tests (real macOS window, not test binding)
-- To access drawer content, tap the hamburger menu icon first
-- After tapping a button inside a drawer, the drawer does NOT auto-close
-
-**Strategy:** Avoid drawer interactions when possible. The ChatPanel body renders regardless of drawer state, and threads auto-select when entering a room.
-
-### Entitlements
-
-Both the app AND the test runner need their own entitlements:
-
-| Binary | Entitlements file | Required keys |
-|--------|-------------------|---------------|
-| Runner (app) | `macos/Runner/DebugProfile.entitlements` | `network.client`, `network.server` |
-| RunnerUITests | `macos/RunnerUITests/RunnerUITests.entitlements` | `network.client`, `network.server`, `app-sandbox` |
-
-**Debugging:** `codesign -d --entitlements :- <path-to-binary>` shows actual signed entitlements.
-
-**After changing entitlements**, re-approve Accessibility permissions in System Settings.
-
-### Keyboard assertions
-
-macOS has a Flutter keyboard assertion bug. All tests must call `ignoreKeyboardAssertions()` early. On web, the function is a no-op (`kIsWeb` guard).
-
-## iOS Constraints
-
-### RunnerUITests target required
-
-The iOS Xcode project needs a `RunnerUITests` UI test bundle target
-(same pattern as macOS). The target, scheme entry, and Podfile entry
-are already configured in this repo.
-
-### Simulator OS version must match
-
-Patrol uses `--ios=<version>` (defaults to `latest`). If the booted
-simulator runs an older iOS than the latest installed SDK, pass the
-version explicitly: `--ios=18.6`.
-
-### Keyboard assertions
-
-`ignoreKeyboardAssertions()` applies on iOS too (same Flutter bug as
-macOS). No changes needed — the function works on both platforms.
-
-## Chrome (Web) Constraints
-
-### Viewport is controllable
-
-Unlike macOS (fixed ~800x600), Chrome viewport can be set with `--web-viewport "1280x720"`. A viewport >= 840px wide puts the app above the desktop breakpoint, so the HistoryPanel renders inline instead of in a drawer.
-
-### No entitlements required
-
-Web does not require macOS entitlements or Accessibility permissions.
-
-### CORS
-
-The backend must return proper CORS headers for the test origin. Default dev server config at `localhost:8000` typically handles this.
-
-### Node.js required
-
-Patrol uses Playwright for Chrome automation. Playwright requires Node.js >= 18. It auto-installs browser binaries on first `patrol test --device chrome` run.
 
 ## Test Patterns
 
@@ -258,15 +218,17 @@ This repo is a git worktree. Pre-commit hooks that invoke `flutter`/`dart` must 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | "Multiple devices found" prompt | Missing `--device` flag | Add `--device macos` |
-| `command not found: patrol` | Not on PATH | Use full path `patrol` |
-| Test hangs on "Waiting for app" | Entitlements missing/wrong | Check both Runner and RunnerUITests entitlements |
+| `command not found: patrol` | `~/.pub-cache/bin` not on PATH | Add to PATH or use full path |
+| Test hangs on "Waiting for app" | Entitlements missing/wrong | See [macOS setup](./setup/macos-setup.md) |
 | `0.0.0-unknown` version | GIT_DIR set in worktree | Use `scripts/flutter-analyze.sh` wrapper |
-| "did not appear within 10s" | Widget in drawer, not body | Check if window < 840px breakpoint |
+| "did not appear within 10s" | Widget in drawer, not body | See [macOS setup](./setup/macos-setup.md) |
 | `Bad state: No element` on enterText | Finder matched Semantics, not TextField | Use `find.byType(TextField)` instead |
 | Accessibility permission denied | Entitlements changed | Re-approve in System Settings > Privacy > Accessibility |
-| Chrome: "Cannot find module playwright" | Node.js not installed | Install Node.js >= 18, then rerun |
-| Chrome: CORS error in test | Backend missing CORS headers | Configure backend `Access-Control-Allow-Origin` for test origin |
-| Chrome: "Failed to fetch" on `verifyBackendOrFail` | Backend offline or CORS block | Start backend; check browser console for CORS errors |
-| `command not found: patrol` | `~/.pub-cache/bin` not on PATH | Add to PATH or use full path `~/.pub-cache/bin/patrol` |
-| iOS: xcodebuild exit code 70 | `OS=latest` doesn't match simulator | Use `--ios=18.6` (match simulator OS) |
+| iOS: xcodebuild exit code 70 | `OS=latest` doesn't match simulator | See [iOS setup](./setup/ios-setup.md) |
 | iOS: "Device ... is not attached" | Wrong device ID format | Use UUID from `xcrun simctl list devices booted` |
+| Android: "No connected devices" | Emulator not running or `adb` not on PATH | See [Android setup](./setup/android-setup.md) |
+| Android: connection refused to localhost | Emulator can't reach host localhost | Use `10.0.2.2` instead of `localhost` |
+| Android: Gmail login prompt on boot | AVD uses Google Play image | See [Android setup](./setup/android-setup.md) |
+| Chrome: "Cannot find module playwright" | Node.js not installed | See [Web setup](./setup/web-setup.md) |
+| Chrome: CORS error in test | Backend missing CORS headers | See [Web setup](./setup/web-setup.md) |
+| Chrome: "Failed to fetch" on `verifyBackendOrFail` | Backend offline or CORS block | Start backend; check browser console |
