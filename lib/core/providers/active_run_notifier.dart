@@ -7,8 +7,10 @@ import 'package:soliplex_client/soliplex_client.dart' as domain
     show Cancelled, Completed, Conversation, Failed, Idle, Running;
 import 'package:soliplex_frontend/core/logging/loggers.dart';
 import 'package:soliplex_frontend/core/models/active_run_state.dart';
+import 'package:soliplex_frontend/core/models/run_handle.dart';
 import 'package:soliplex_frontend/core/providers/api_provider.dart';
 import 'package:soliplex_frontend/core/providers/thread_history_cache.dart';
+import 'package:soliplex_frontend/core/services/run_registry.dart';
 
 /// Internal state representing the notifier's resource management.
 ///
@@ -82,17 +84,57 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
   NotifierInternalState _internalState = const IdleInternalState();
   bool _isStarting = false;
 
+  /// Registry tracking active runs across rooms and threads.
+  final RunRegistry _registry = RunRegistry();
+
+  /// Current run handle, if a run is active.
+  RunHandle? _currentHandle;
+
+  /// The run registry for this notifier.
+  ///
+  /// Exposed for testing and external access to run tracking state.
+  RunRegistry get registry => _registry;
+
   @override
   ActiveRunState build() {
     _agUiClient = ref.watch(agUiClientProvider);
 
     ref.onDispose(() {
-      if (_internalState is RunningInternalState) {
-        (_internalState as RunningInternalState).dispose();
+      _registry.dispose().catchError((Object e, StackTrace st) {
+        Loggers.activeRun.error(
+          'Registry disposal error',
+          error: e,
+          stackTrace: st,
+        );
+      });
+      _currentHandle = null;
+
+      final internalState = _internalState;
+      if (internalState is RunningInternalState) {
+        internalState.dispose().catchError((Object e, StackTrace st) {
+          Loggers.activeRun.error(
+            'Internal state disposal error',
+            error: e,
+            stackTrace: st,
+          );
+        });
       }
     });
 
     return const IdleState();
+  }
+
+  /// Sets the public state and keeps the current [RunHandle] in sync.
+  ///
+  /// Automatically releases the handle reference on [CompletedState].
+  /// Other terminal transitions (e.g., [IdleState] from [reset]) must
+  /// release the handle explicitly before calling this method.
+  void _updateState(ActiveRunState newState) {
+    state = newState;
+    _currentHandle?.state = newState;
+    if (newState is CompletedState) {
+      _currentHandle = null;
+    }
   }
 
   /// Starts a new run with the given message.
@@ -178,7 +220,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
       );
 
       // Set running state
-      state = RunningState(conversation: conversation);
+      _updateState(RunningState(conversation: conversation));
 
       // Step 2: Build the streaming endpoint URL with backend run_id
       final endpoint = 'rooms/$roomId/agui/$threadId/$runId';
@@ -231,7 +273,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
               ),
               result: const Success(),
             );
-            state = completed;
+            _updateState(completed);
             _updateCacheOnCompletion(completed);
           }
         },
@@ -242,7 +284,6 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         'Stream subscription established for run $runId',
       );
 
-      // Store running state with correlation data
       _internalState = RunningInternalState(
         runId: runId,
         cancelToken: cancelToken,
@@ -250,6 +291,24 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         userMessageId: userMessageObj.id,
         previousAguiState: cachedAguiState,
       );
+
+      _currentHandle = RunHandle(
+        roomId: roomId,
+        threadId: threadId,
+        cancelToken: cancelToken,
+        subscription: subscription,
+        initialState: state,
+      );
+
+      try {
+        await _registry.registerRun(_currentHandle!);
+      } catch (e, st) {
+        Loggers.activeRun.error(
+          'Failed to register run with registry',
+          error: e,
+          stackTrace: st,
+        );
+      }
     } on CancellationError catch (e, st) {
       // User cancelled - clean up resources
       Loggers.activeRun.info('Run cancelled', error: e, stackTrace: st);
@@ -260,9 +319,10 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         ),
         result: CancelledResult(reason: e.message),
       );
-      state = completed;
+      _updateState(completed);
       _updateCacheOnCompletion(completed);
       _internalState = const IdleInternalState();
+      _currentHandle = null;
     } catch (e, stackTrace) {
       // Clean up subscription on any error
       Loggers.activeRun.error(
@@ -278,9 +338,10 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         ),
         result: FailedResult(errorMessage: errorMsg, stackTrace: stackTrace),
       );
-      state = completed;
+      _updateState(completed);
       _updateCacheOnCompletion(completed);
       _internalState = const IdleInternalState();
+      _currentHandle = null;
     } finally {
       _isStarting = false;
     }
@@ -306,9 +367,10 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         ),
         result: const CancelledResult(reason: 'Cancelled by user'),
       );
-      state = completed;
+      _updateState(completed);
       _updateCacheOnCompletion(completed);
     }
+    _currentHandle = null;
   }
 
   /// Resets to idle state, clearing all messages and state.
@@ -320,7 +382,8 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
     Loggers.activeRun.debug('reset called');
     final previousState = _internalState;
     _internalState = const IdleInternalState();
-    state = const IdleState();
+    _updateState(const IdleState());
+    _currentHandle = null;
 
     if (previousState is RunningInternalState) {
       try {
@@ -354,7 +417,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         ),
         result: FailedResult(errorMessage: errorMsg, stackTrace: stackTrace),
       );
-      state = completed;
+      _updateState(completed);
       _updateCacheOnCompletion(completed);
     }
 
@@ -364,6 +427,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
       internalState.dispose();
       _internalState = const IdleInternalState();
     }
+    _currentHandle = null;
   }
 
   /// Processes a single AG-UI event and updates state accordingly.
@@ -383,7 +447,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
       );
 
       // Map result to frontend state
-      state = _mapResultToState(currentState, result);
+      _updateState(_mapResultToState(currentState, result));
     } catch (e, st) {
       _handleRunFailure(e, st);
     }
