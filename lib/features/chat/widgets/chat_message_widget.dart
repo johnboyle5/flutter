@@ -2,13 +2,17 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+
 import 'package:soliplex_client/soliplex_client.dart'
     show ChatMessage, ChatUser, ErrorMessage, SourceReference, TextMessage;
+
 import 'package:soliplex_frontend/core/logging/loggers.dart';
 import 'package:soliplex_frontend/design/design.dart';
 import 'package:soliplex_frontend/features/chat/widgets/citations_section.dart';
-import 'package:soliplex_frontend/features/chat/widgets/code_block_builder.dart';
+import 'package:soliplex_frontend/shared/widgets/fullscreen_image_viewer.dart';
+import 'package:soliplex_frontend/shared/widgets/markdown/flutter_markdown_plus_renderer.dart';
+
+import 'package:url_launcher/url_launcher.dart';
 
 /// Widget that displays a single chat message.
 class ChatMessageWidget extends StatelessWidget {
@@ -112,39 +116,14 @@ class ChatMessageWidget extends StatelessWidget {
                       // The markdown is rendered as separate widgets,
                       // if you set selectable: true, you'll have to select
                       // each widget separately.
-                      MarkdownBody(
+                      FlutterMarkdownPlusRenderer(
                         data: text,
-                        styleSheet: MarkdownStyleSheet(
-                          p: theme.textTheme.bodyLarge?.copyWith(
-                            color: message is ErrorMessage
-                                ? theme.colorScheme.error
-                                : theme.colorScheme.onSurface,
-                          ),
-                          code: context.monospace.copyWith(
-                            backgroundColor:
-                                theme.colorScheme.surfaceContainerHigh,
-                          ),
-                          codeblockDecoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(
-                              soliplexTheme.radii.sm,
-                            ),
-                          ),
-                          blockquoteDecoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerLowest,
-                            borderRadius: BorderRadius.circular(
-                              soliplexTheme.radii.sm,
-                            ),
-                          ),
+                        onLinkTap: _openLink,
+                        onImageTap: (src, alt) => _openImage(
+                          context,
+                          src,
+                          alt,
                         ),
-                        builders: {
-                          'code': CodeBlockBuilder(
-                            preferredStyle: context.monospace.copyWith(
-                              fontSize: 14,
-                            ),
-                            brightness: Theme.of(context).brightness,
-                          ),
-                        },
                       ),
                     // Only show streaming indicator when there's actual text
                     // being streamed. When text is empty, the status indicator
@@ -256,6 +235,28 @@ class ChatMessageWidget extends StatelessWidget {
             onTap: () => _copyToClipboard(context, messageText),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openLink(String href, String? title) async {
+    final uri = Uri.tryParse(href);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } on Exception catch (e, stackTrace) {
+      Loggers.ui.error(
+        'Failed to open link: $href',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  void _openImage(BuildContext context, String src, String? alt) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FullscreenImageViewer(imageUrl: src, altText: alt),
       ),
     );
   }
