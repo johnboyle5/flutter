@@ -269,7 +269,7 @@ MarkdownThemeExtension _markdownThemeExtension(
     h1: textTheme.titleLarge,
     h2: textTheme.titleMedium,
     h3: textTheme.titleSmall,
-    body: textTheme.bodyMedium,
+    body: textTheme.bodyLarge,
     code: textTheme.bodyMedium?.copyWith(
       backgroundColor: colorScheme.surfaceContainerHigh,
     ),
@@ -283,6 +283,7 @@ MarkdownThemeExtension _markdownThemeExtension(
       borderRadius: BorderRadius.circular(soliplexRadii.sm),
     ),
     blockquoteDecoration: BoxDecoration(
+      color: colorScheme.surfaceContainerHigh,
       border: Border(
         left: BorderSide(
           color: colorScheme.outlineVariant,
