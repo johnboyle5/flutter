@@ -114,7 +114,14 @@ DisplayMessagesResult computeDisplayMessages(
 /// ```
 class MessageList extends ConsumerStatefulWidget {
   /// Creates a message list widget.
-  const MessageList({super.key});
+  ///
+  /// When [maxContentWidth] is provided, each message item is centered within
+  /// that width while the scroll view spans full width (scrollbar at edge).
+  const MessageList({this.maxContentWidth, super.key});
+
+  /// Optional max width for message content. The ListView itself remains
+  /// full-width so the scrollbar sits at the screen edge.
+  final double? maxContentWidth;
 
   @override
   ConsumerState<MessageList> createState() => _MessageListState();
@@ -273,13 +280,22 @@ class _MessageListState extends ConsumerState<MessageList> {
               sourceReferencesForUserMessageProvider(userMessageId),
             );
 
-            return ChatMessageWidget(
+            final child = ChatMessageWidget(
               key: ValueKey(message.id),
               message: message,
               isStreaming: isSyntheticMessage,
               isThinkingStreaming:
                   isSyntheticMessage && computation.isThinkingStreaming,
               sourceReferences: sourceRefs,
+            );
+
+            if (widget.maxContentWidth == null) return child;
+
+            return Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: widget.maxContentWidth!),
+                child: child,
+              ),
             );
           },
         ),
@@ -293,9 +309,9 @@ class _MessageListState extends ConsumerState<MessageList> {
             child: Center(
               child: Material(
                 elevation: 8,
-                borderRadius: BorderRadius.circular(soliplexTheme.radii.xl),
+                borderRadius: BorderRadius.circular(soliplexTheme.radii.md),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(soliplexTheme.radii.xl),
+                  borderRadius: BorderRadius.circular(soliplexTheme.radii.md),
                   onTap: () => _scrollToBottom(force: true),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -305,7 +321,7 @@ class _MessageListState extends ConsumerState<MessageList> {
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.secondaryContainer,
                       borderRadius: BorderRadius.circular(
-                        soliplexTheme.radii.xl,
+                        soliplexTheme.radii.md,
                       ),
                     ),
                     child: Row(

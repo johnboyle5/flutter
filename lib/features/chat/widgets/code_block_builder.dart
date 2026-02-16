@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/themes/github.dart';
+import 'package:flutter_highlight/themes/vs2015.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 /// Custom markdown builder for code blocks with syntax highlighting.
 class CodeBlockBuilder extends MarkdownElementBuilder {
-  CodeBlockBuilder({required this.preferredStyle});
+  CodeBlockBuilder({
+    required this.preferredStyle,
+    required this.brightness,
+  });
 
   final TextStyle preferredStyle;
+  final Brightness brightness;
 
   @override
   Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
@@ -32,7 +37,7 @@ class CodeBlockBuilder extends MarkdownElementBuilder {
         child: HighlightView(
           code,
           language: language,
-          theme: githubTheme,
+          theme: brightness == Brightness.dark ? vs2015Theme : githubTheme,
           padding: EdgeInsets.zero,
           textStyle: this.preferredStyle,
         ),

@@ -2,11 +2,9 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:soliplex_client/soliplex_client.dart'
     show ChatMessage, ChatUser, ErrorMessage, SourceReference, TextMessage;
-
 import 'package:soliplex_frontend/core/logging/loggers.dart';
 import 'package:soliplex_frontend/design/design.dart';
 import 'package:soliplex_frontend/features/chat/widgets/citations_section.dart';
@@ -84,8 +82,8 @@ class ChatMessageWidget extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isUser
                       ? theme.colorScheme.primaryContainer
-                      : theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(soliplexTheme.radii.lg),
+                      : theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(soliplexTheme.radii.md),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,12 +130,19 @@ class ChatMessageWidget extends StatelessWidget {
                               soliplexTheme.radii.sm,
                             ),
                           ),
+                          blockquoteDecoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerLowest,
+                            borderRadius: BorderRadius.circular(
+                              soliplexTheme.radii.sm,
+                            ),
+                          ),
                         ),
                         builders: {
                           'code': CodeBlockBuilder(
                             preferredStyle: context.monospace.copyWith(
                               fontSize: 14,
                             ),
+                            brightness: Theme.of(context).brightness,
                           ),
                         },
                       ),

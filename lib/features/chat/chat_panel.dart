@@ -84,39 +84,43 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         final maxContentWidth =
             width >= SoliplexBreakpoints.desktop ? width * 2 / 3 : width;
 
-        return Align(
-          alignment: AlignmentDirectional.topCenter,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxContentWidth),
-            child: AnimatedPadding(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-              padding: EdgeInsets.only(bottom: bottomInset),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: switch (runState) {
-                      CompletedState(
-                        result: FailedResult(
-                          :final errorMessage,
-                          :final stackTrace,
-                        ),
-                      ) =>
-                        ErrorDisplay(
-                          error: errorMessage,
-                          stackTrace: stackTrace ?? StackTrace.empty,
-                          onRetry: () => _handleRetry(ref),
-                        ),
-                      _ => const MessageList(),
-                    },
+        return AnimatedPadding(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: Column(
+            children: [
+              Expanded(
+                child: switch (runState) {
+                  CompletedState(
+                    result: FailedResult(
+                      :final errorMessage,
+                      :final stackTrace,
+                    ),
+                  ) =>
+                    ErrorDisplay(
+                      error: errorMessage,
+                      stackTrace: stackTrace ?? StackTrace.empty,
+                      onRetry: () => _handleRetry(ref),
+                    ),
+                  _ => MessageList(maxContentWidth: maxContentWidth),
+                },
+              ),
+
+              // Status indicator (above input, shown only when streaming)
+              if (isStreaming)
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxContentWidth),
+                    child: StatusIndicator(streaming: runState.streaming),
                   ),
+                ),
 
-                  // Status indicator (above input, shown only when streaming)
-                  if (isStreaming)
-                    StatusIndicator(streaming: runState.streaming),
-
-                  // Input
-                  ChatInput(
+              // Input
+              Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxContentWidth),
+                  child: ChatInput(
                     onSend: (text) => _handleSend(context, ref, text),
                     roomId: room?.id,
                     selectedDocuments:
@@ -129,9 +133,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     suggestions: room?.suggestions ?? const [],
                     showSuggestions: showSuggestions,
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         );
       },
