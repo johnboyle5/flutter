@@ -383,7 +383,7 @@ class _DocumentPickerDialogState extends ConsumerState<_DocumentPickerDialog> {
     return AlertDialog(
       title: const Text('Select documents'),
       content: SizedBox(
-        width: 300,
+        width: 480,
         height: 400,
         child: documentsAsync.when(
           data: (documents) {
@@ -425,12 +425,14 @@ class _DocumentPickerDialogState extends ConsumerState<_DocumentPickerDialog> {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stackTrace) => ErrorDisplay(
-            error: error,
-            stackTrace: stackTrace,
-            onRetry: () {
-              ref.read(documentsProvider(widget.roomId).notifier).retry();
-            },
+          error: (error, stackTrace) => SingleChildScrollView(
+            child: ErrorDisplay(
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                ref.read(documentsProvider(widget.roomId).notifier).retry();
+              },
+            ),
           ),
         ),
       ),
