@@ -86,7 +86,6 @@ class HistoryPanel extends ConsumerWidget {
         };
         final currentThreadId = ref.watch(currentThreadIdProvider);
         final unreadRuns = ref.watch(unreadRunsProvider);
-        final unreadThreads = unreadRuns[roomId] ?? const {};
 
         return Padding(
           padding: const EdgeInsets.only(left: 8, right: 8, top: 8),
@@ -117,7 +116,9 @@ class HistoryPanel extends ConsumerWidget {
                         thread: thread,
                         isSelected: isSelected,
                         hasActiveRun: hasActiveRun,
-                        hasUnreadRun: unreadThreads.contains(thread.id),
+                        hasUnreadRun: unreadRuns.isThreadUnread(
+                          (roomId: roomId, threadId: thread.id),
+                        ),
                         onTap: () => _handleThreadSelection(
                           context,
                           ref,
@@ -145,7 +146,9 @@ class HistoryPanel extends ConsumerWidget {
     String threadId,
   ) {
     Loggers.room.trace('Thread selected from list: $threadId');
-    ref.read(unreadRunsProvider.notifier).markRead(roomId, threadId);
+    ref
+        .read(unreadRunsProvider.notifier)
+        .markRead((roomId: roomId, threadId: threadId));
     selectThread(
       ref: ref,
       roomId: roomId,

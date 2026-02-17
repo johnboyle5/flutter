@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:soliplex_client/soliplex_client.dart' as domain
     show Conversation, Running, ThreadInfo;
 import 'package:soliplex_frontend/core/models/active_run_state.dart';
+import 'package:soliplex_frontend/core/models/thread_key.dart';
 import 'package:soliplex_frontend/core/providers/threads_provider.dart';
 import 'package:soliplex_frontend/core/providers/unread_runs_provider.dart';
 import 'package:soliplex_frontend/features/history/history_panel.dart';
@@ -35,17 +36,17 @@ class _TrackingThreadSelectionNotifier extends Notifier<ThreadSelection>
 
 /// Mock UnreadRunsNotifier that tracks markRead calls.
 class _TrackingUnreadRunsNotifier extends UnreadRunsNotifier {
-  final List<(String, String)> markReadCalls = [];
+  final List<ThreadKey> markReadCalls = [];
 
   @override
-  Map<String, Set<String>> build() => initialState;
+  UnreadRuns build() => initialState;
 
-  Map<String, Set<String>> initialState = {};
+  UnreadRuns initialState = const UnreadRuns();
 
   @override
-  void markRead(String roomId, String threadId) {
-    markReadCalls.add((roomId, threadId));
-    super.markRead(roomId, threadId);
+  void markRead(ThreadKey key) {
+    markReadCalls.add(key);
+    super.markRead(key);
   }
 }
 
@@ -287,9 +288,11 @@ void main() {
               ),
               unreadRunsProvider.overrideWith(() {
                 return trackingNotifier = _TrackingUnreadRunsNotifier()
-                  ..initialState = {
-                    'room-1': {'thread-1'},
-                  };
+                  ..initialState = const UnreadRuns(
+                    byRoom: {
+                      'room-1': {'thread-1'},
+                    },
+                  );
               }),
             ],
           ),
@@ -301,7 +304,9 @@ void main() {
 
         expect(
           trackingNotifier.markReadCalls,
-          contains(('room-1', 'thread-1')),
+          contains(
+            const (roomId: 'room-1', threadId: 'thread-1'),
+          ),
         );
       });
     });
@@ -322,9 +327,11 @@ void main() {
               currentThreadIdProvider.overrideWith((ref) => null),
               unreadRunsProvider.overrideWith(() {
                 return _TrackingUnreadRunsNotifier()
-                  ..initialState = {
-                    'room-1': {'thread-1'},
-                  };
+                  ..initialState = const UnreadRuns(
+                    byRoom: {
+                      'room-1': {'thread-1'},
+                    },
+                  );
               }),
             ],
           ),
