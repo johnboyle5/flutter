@@ -83,17 +83,17 @@ flutter_launcher_icons:
   web:
     generate: true
   image_path: "assets/branding/app_icon_1024.png"
-  adaptive_icon_background: "#424242"
+  adaptive_icon_background: "#0e121c"
   adaptive_icon_foreground: "assets/branding/logo_1024.png"
   web_favicon_path: "assets/branding/favicon_48.png"
 
 flutter_native_splash:
-  color: "#424242"
+  color: "#0e121c"
   image: assets/branding/logo_1024.png
 
   android_12:
     image: assets/branding/logo_splash_android12.png
-    color: "#424242"
+    color: "#0e121c"
 
   web: true
 
