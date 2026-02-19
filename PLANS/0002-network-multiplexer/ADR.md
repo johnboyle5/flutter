@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Implemented. All 11 slices complete.
 
 ## Context
 
@@ -56,7 +56,7 @@ Bundle run resources into a `RunHandle` class:
 
 ```dart
 class RunHandle {
-  final RunKey key;
+  final ThreadKey key;
   String get roomId => key.roomId;
   String get threadId => key.threadId;
   final String runId;
@@ -75,11 +75,11 @@ class RunHandle {
 resources. Extracting to a standalone class enables multi-run tracking and
 improves testability.
 
-#### 2. RunKey Record Typedef
+#### 2. ThreadKey Record Typedef
 
-Runs are identified by `typedef RunKey = ({String roomId, String threadId})`,
+Runs are identified by `typedef ThreadKey = ({String roomId, String threadId})`,
 a named record providing type-safe composite identity with value equality.
-`RunKey` is used as the map key in `RunRegistry`, the identity field in
+`ThreadKey` is used as the map key in `RunRegistry`, the identity field in
 `RunHandle` and `RunLifecycleEvent`. Convenience getters on both types
 expose `roomId` and `threadId` directly.
 
@@ -87,18 +87,20 @@ expose `roomId` and `threadId` directly.
 
 - Thread IDs may not be globally unique across rooms (depends on backend)
 - Record value equality eliminates string-concatenation keys and `_makeKey()`
-- Type-safe map key: `Map<RunKey, RunHandle>` vs `Map<String, RunHandle>`
-- Registry API takes one param (`RunKey`) instead of two strings
+- Type-safe map key: `Map<ThreadKey, RunHandle>` vs `Map<String, RunHandle>`
+- Registry API takes one param (`ThreadKey`) instead of two strings
 - Event construction is terser: `RunStarted(key: handle.key)`
 - Convenience getters preserve consumer ergonomics: `event.roomId`
 
-#### 3. Minimal Provider Footprint
+#### 3. Registry as Owned Field with Constructor Injection
 
-Expose `RunRegistry` via a single provider (or integrate into
-`activeRunNotifierProvider`). Domain logic stays in the `RunRegistry` class.
+`RunRegistry` is a plain class owned by `ActiveRunNotifier` as a `late final`
+field. The `OnRunCompleted` callback is passed via the constructor. This keeps
+the registry a pure Dart service with no Flutter/Riverpod dependency.
 
-**Rationale:** Per issue #127, avoid proliferating providers. Centralized logic
-is easier to test and reason about.
+**Rationale:** Per issue #127, avoid proliferating providers. A field with
+constructor injection is cleaner than a static singleton — it avoids global
+state and makes the registry independently testable.
 
 #### 4. Two Lifecycle Event Types (not three)
 
@@ -123,7 +125,10 @@ UI. The UI can evolve its presentation independently.
 
 Terminal state transitions go through `RunRegistry.completeRun(handle,
 completed)` rather than setting `handle.state` directly. This method
-atomically sets the handle's state and emits the lifecycle event.
+atomically sets the handle's state, emits the lifecycle event, and invokes
+the `onRunCompleted` callback. A separate `notifyCompletion(key, completed)`
+method exists for runs that fail before registration (e.g., errors during
+setup) — it invokes the callback without touching the registry map.
 
 **Rationale:** Without this, every call site would need to both set the
 state and emit the event. Forgetting the emission would be a silent bug.
@@ -153,7 +158,7 @@ the basic improvement is already shipped.
 #### RunHandle
 
 ```dart
-typedef RunKey = ({String roomId, String threadId});
+// ThreadKey is defined in lib/core/models/thread_key.dart
 
 /// Encapsulates resources for a single active run.
 class RunHandle {
@@ -167,7 +172,7 @@ class RunHandle {
     ActiveRunState? initialState,
   }) : state = initialState ?? const IdleState();
 
-  final RunKey key;
+  final ThreadKey key;
   String get roomId => key.roomId;
   String get threadId => key.threadId;
   final String runId;
@@ -179,7 +184,8 @@ class RunHandle {
   bool get isActive => state.isRunning;
 
   Future<void> dispose() async {
-    // Idempotent — safe to call multiple times.
+    if (_disposed) return;
+    _disposed = true;
     cancelToken.cancel();
     await subscription.cancel();
   }
@@ -189,9 +195,14 @@ class RunHandle {
 #### RunRegistry
 
 ```dart
+typedef OnRunCompleted = void Function(ThreadKey key, CompletedState completed);
+
 /// Manages multiple concurrent AG-UI runs.
 class RunRegistry {
-  final Map<RunKey, RunHandle> _runs = {};
+  RunRegistry({this.onRunCompleted});
+
+  final OnRunCompleted? onRunCompleted;
+  final Map<ThreadKey, RunHandle> _runs = {};
   final _controller = StreamController<RunLifecycleEvent>.broadcast();
 
   Stream<RunLifecycleEvent> get lifecycleEvents => _controller.stream;
@@ -199,24 +210,24 @@ class RunRegistry {
   /// Register a run handle (replaces existing for same key). Emits RunStarted.
   Future<void> registerRun(RunHandle handle) async { ... }
 
-  /// Atomically set terminal state and emit RunCompleted.
+  /// Atomically set terminal state, emit RunCompleted, invoke callback.
   /// Silently returns if disposed or handle was replaced by a newer run.
   void completeRun(RunHandle handle, CompletedState completed) { ... }
 
   /// Get current state for a thread's run, or null if none.
-  ActiveRunState? getRunState(RunKey key) { ... }
+  ActiveRunState? getRunState(ThreadKey key) { ... }
 
   /// Get the run handle for a thread, or null if none.
-  RunHandle? getHandle(RunKey key) { ... }
+  RunHandle? getHandle(ThreadKey key) { ... }
 
   /// Whether any run (active or completed) is registered for the key.
-  bool hasRun(RunKey key) { ... }
+  bool hasRun(ThreadKey key) { ... }
 
   /// Whether an actively running (not yet completed) run exists for the key.
-  bool hasActiveRun(RunKey key) { ... }
+  bool hasActiveRun(ThreadKey key) { ... }
 
   /// Remove a run and dispose its resources (no lifecycle event).
-  Future<void> removeRun(RunKey key) async { ... }
+  Future<void> removeRun(ThreadKey key) async { ... }
 
   /// Dispose all runs without emitting lifecycle events.
   Future<void> removeAll() async { ... }
@@ -225,10 +236,7 @@ class RunRegistry {
   int get activeRunCount;
   Iterable<RunHandle> get handles;
 
-  Future<void> dispose() async {
-    await removeAll();
-    await _controller.close();
-  }
+  Future<void> dispose() async { ... }
 }
 ```
 
@@ -238,7 +246,7 @@ class RunRegistry {
 @immutable
 sealed class RunLifecycleEvent {
   const RunLifecycleEvent({required this.key});
-  final RunKey key;
+  final ThreadKey key;
   String get roomId => key.roomId;
   String get threadId => key.threadId;
 }
@@ -257,34 +265,41 @@ class RunCompleted extends RunLifecycleEvent {
 
 ### Provider Integration
 
-The registry is embedded in `ActiveRunNotifier` rather than exposed as a
-separate provider. This keeps the provider footprint minimal (per issue #127)
-and makes the registry an implementation detail of the notifier. A `registry`
-getter provides external access for testing and lifecycle event consumption.
+The registry is owned by `ActiveRunNotifier` as a `late final` field,
+created with the `OnRunCompleted` callback via constructor injection.
+The notifier exposes it via a `registry` getter and subscribes to
+lifecycle events for unread indicators. On dispose, it cleans up the
+lifecycle subscription and disposes the registry.
 
 ```dart
 class ActiveRunNotifier extends Notifier<ActiveRunState> {
-  final RunRegistry _registry = RunRegistry();
-
-  /// The run whose state the notifier exposes to UI.
+  late final RunRegistry _registry =
+      RunRegistry(onRunCompleted: _buildCacheUpdater());
   RunHandle? _currentHandle;
+  StreamSubscription<RunLifecycleEvent>? _lifecycleSub;
 
-  /// Exposed for testing and external access to run tracking state.
   RunRegistry get registry => _registry;
 
   @override
   ActiveRunState build() {
+    // Mark thread as unread when a background run completes.
+    _lifecycleSub = _registry.lifecycleEvents.listen((event) { ... });
+
     // Sync exposed state when the user navigates between rooms/threads.
     ref
       ..listen(currentRoomIdProvider, (_, __) => _syncCurrentHandle())
       ..listen(currentThreadIdProvider, (_, __) => _syncCurrentHandle())
-      ..onDispose(() => _registry.dispose());
+      ..onDispose(() {
+        _lifecycleSub?.cancel();
+        _registry.dispose();
+        _currentHandle = null;
+      });
 
     return const IdleState();
   }
 
   Future<void> startRun({...}) async {
-    // Creates RunHandle, registers with _registry, subscribes to events.
+    // Creates RunHandle, registers with registry, subscribes to events.
     // Each run's stream callbacks capture their own handle via closure
     // so concurrent runs don't interfere with each other.
   }
@@ -292,6 +307,11 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
   void _syncCurrentHandle() {
     // Looks up the run for the current room/thread in the registry
     // and updates _currentHandle + notifier state accordingly.
+  }
+
+  OnRunCompleted _buildCacheUpdater() {
+    // Returns callback that merges completed run's messages and
+    // messageStates into ThreadHistoryCache using composite ThreadKey.
   }
 }
 ```
