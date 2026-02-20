@@ -7,10 +7,13 @@ import 'package:soliplex_client/soliplex_client.dart' as domain
 import 'package:soliplex_frontend/core/logging/loggers.dart';
 import 'package:soliplex_frontend/core/models/active_run_state.dart';
 import 'package:soliplex_frontend/core/models/run_handle.dart';
+import 'package:soliplex_frontend/core/models/run_lifecycle_event.dart';
+import 'package:soliplex_frontend/core/models/thread_key.dart';
 import 'package:soliplex_frontend/core/providers/api_provider.dart';
 import 'package:soliplex_frontend/core/providers/rooms_provider.dart';
 import 'package:soliplex_frontend/core/providers/thread_history_cache.dart';
 import 'package:soliplex_frontend/core/providers/threads_provider.dart';
+import 'package:soliplex_frontend/core/providers/unread_runs_provider.dart';
 import 'package:soliplex_frontend/core/services/run_registry.dart';
 
 /// Manages the lifecycle of an active AG-UI run.
@@ -25,8 +28,7 @@ import 'package:soliplex_frontend/core/services/run_registry.dart';
 /// ```dart
 /// final notifier = ref.read(activeRunNotifierProvider.notifier);
 /// await notifier.startRun(
-///   roomId: 'room-123',
-///   threadId: 'thread-456',
+///   key: (roomId: 'room-123', threadId: 'thread-456'),
 ///   userMessage: 'Hello!',
 /// );
 /// ```
@@ -35,10 +37,14 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
   bool _isStarting = false;
 
   /// Registry tracking active runs across rooms and threads.
-  final RunRegistry _registry = RunRegistry();
+  late final RunRegistry _registry =
+      RunRegistry(onRunCompleted: _buildCacheUpdater());
 
   /// Current run handle — the run whose state the notifier exposes to UI.
   RunHandle? _currentHandle;
+
+  /// Subscription to registry lifecycle events.
+  StreamSubscription<RunLifecycleEvent>? _lifecycleSub;
 
   /// The run registry for this notifier.
   ///
@@ -49,11 +55,22 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
   ActiveRunState build() {
     _agUiClient = ref.watch(agUiClientProvider);
 
+    // Mark thread as unread when a non-cancelled background run completes.
+    _lifecycleSub = _registry.lifecycleEvents.listen((event) {
+      if (event is RunCompleted) {
+        final isBackground = _currentHandle?.key != event.key;
+        if (isBackground && event.result is! CancelledResult) {
+          ref.read(unreadRunsProvider.notifier).markUnread(event.key);
+        }
+      }
+    });
+
     // Sync exposed state when the user navigates between rooms/threads.
     ref
       ..listen(currentRoomIdProvider, (_, __) => _syncCurrentHandle())
       ..listen(currentThreadIdProvider, (_, __) => _syncCurrentHandle())
       ..onDispose(() {
+        _lifecycleSub?.cancel();
         _registry.dispose().catchError((Object e, StackTrace st) {
           Loggers.activeRun.error(
             'Registry disposal error',
@@ -84,10 +101,9 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
   /// Useful when a thread was just created with an initial run.
   ///
   /// Multiple runs can be active concurrently in different threads. The
-  /// notifier's [state] tracks the most recently started run.
+  /// notifier's [state] tracks the run for the currently viewed thread.
   Future<void> startRun({
-    required String roomId,
-    required String threadId,
+    required ThreadKey key,
     required String userMessage,
     String? existingRunId,
     Map<String, dynamic>? initialState,
@@ -97,6 +113,9 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         'Cannot start run: startRun already in progress.',
       );
     }
+
+    final roomId = key.roomId;
+    final threadId = key.threadId;
 
     _isStarting = true;
     Loggers.activeRun.debug(
@@ -137,7 +156,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
       // because normal UI flow ensures cache is populated before user can
       // send. Adding async fetch here would block UI for a rare edge case.
       // See issue #30 for details.
-      final cachedHistory = ref.read(threadHistoryCacheProvider)[threadId];
+      final cachedHistory = ref.read(threadHistoryCacheProvider)[key];
       final cachedMessages = cachedHistory?.messages ?? [];
       final cachedAguiState = cachedHistory?.aguiState ?? const {};
 
@@ -162,12 +181,24 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
       final aguiMessages = convertToAgui(allMessages);
 
       // Merge accumulated AG-UI state with any client-provided initial state.
-      // Order: cached state first (backend-generated), then initial state
-      // (client-generated like filter_documents) so client can override.
-      final mergedState = <String, dynamic>{
-        ...cachedAguiState,
-        ...?initialState,
-      };
+      // Deep merge at the state-key level so client-provided keys (e.g.
+      // document_filter) merge INTO the server's haiku.rag.chat dict
+      // rather than replacing it.
+      final mergedState = <String, dynamic>{...cachedAguiState};
+      if (initialState != null) {
+        for (final entry in initialState.entries) {
+          final existing = mergedState[entry.key];
+          if (existing is Map<String, dynamic> &&
+              entry.value is Map<String, dynamic>) {
+            mergedState[entry.key] = <String, dynamic>{
+              ...existing,
+              ...entry.value as Map<String, dynamic>,
+            };
+          } else {
+            mergedState[entry.key] = entry.value;
+          }
+        }
+      }
 
       // Create the input for the run
       final input = SimpleRunAgentInput(
@@ -204,7 +235,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
       );
 
       handle = RunHandle(
-        key: (roomId: roomId, threadId: threadId),
+        key: key,
         runId: runId,
         cancelToken: cancelToken,
         subscription: subscription,
@@ -242,7 +273,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         result: CancelledResult(reason: e.message),
       );
       state = completed;
-      _updateCacheOnCompletion(completed);
+      registry.notifyCompletion(key, completed);
       _currentHandle = null;
     } catch (e, stackTrace) {
       // Clean up subscription on any error
@@ -261,7 +292,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         result: FailedResult(errorMessage: errorMsg, stackTrace: stackTrace),
       );
       state = completed;
-      _updateCacheOnCompletion(completed);
+      registry.notifyCompletion(key, completed);
       _currentHandle = null;
     } finally {
       _isStarting = false;
@@ -270,7 +301,7 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
 
   /// Cancels the current run.
   ///
-  /// Preserves all completed messages but clears streaming state.
+  /// Preserves the conversation so far and marks it as cancelled.
   /// Background runs in other threads are unaffected.
   Future<void> cancelRun() async {
     Loggers.activeRun.debug('cancelRun called');
@@ -289,7 +320,6 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         result: const CancelledResult(reason: 'Cancelled by user'),
       );
       _registry.completeRun(handle, completed);
-      _updateCacheOnCompletion(completed);
       state = completed;
     }
   }
@@ -392,7 +422,6 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         result: FailedResult(errorMessage: errorMsg, stackTrace: stackTrace),
       );
       _registry.completeRun(handle, completed);
-      _updateCacheOnCompletion(completed);
       _syncUiState(handle, completed);
     }
   }
@@ -408,7 +437,6 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         result: const Success(),
       );
       _registry.completeRun(handle, completed);
-      _updateCacheOnCompletion(completed);
       _syncUiState(handle, completed);
     }
   }
@@ -495,10 +523,6 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
         ),
     };
 
-    if (newState is CompletedState) {
-      _updateCacheOnCompletion(newState);
-    }
-
     return newState;
   }
 
@@ -534,23 +558,22 @@ class ActiveRunNotifier extends Notifier<ActiveRunState> {
     return conversation.withMessageState(handle.userMessageId, messageState);
   }
 
-  /// Updates the history cache when a run completes.
-  void _updateCacheOnCompletion(CompletedState completedState) {
-    final threadId = completedState.threadId;
-    if (threadId.isEmpty) return;
+  /// Builds the cache-update callback injected into [RunRegistry].
+  OnRunCompleted _buildCacheUpdater() {
+    return (ThreadKey key, CompletedState completedState) {
+      if (key.threadId.isEmpty) return;
 
-    // Merge existing messageStates from cache with new ones from this run
-    final cachedHistory = ref.read(threadHistoryCacheProvider)[threadId];
-    final existingMessageStates = cachedHistory?.messageStates ?? const {};
-    final newMessageStates = completedState.conversation.messageStates;
+      // Merge existing messageStates from cache with new ones from this run
+      final cachedHistory = ref.read(threadHistoryCacheProvider)[key];
+      final existingMessageStates = cachedHistory?.messageStates ?? const {};
+      final newMessageStates = completedState.conversation.messageStates;
 
-    final history = ThreadHistory(
-      messages: completedState.messages,
-      aguiState: completedState.conversation.aguiState,
-      messageStates: {...existingMessageStates, ...newMessageStates},
-    );
-    ref
-        .read(threadHistoryCacheProvider.notifier)
-        .updateHistory(threadId, history);
+      final history = ThreadHistory(
+        messages: completedState.messages,
+        aguiState: completedState.conversation.aguiState,
+        messageStates: {...existingMessageStates, ...newMessageStates},
+      );
+      ref.read(threadHistoryCacheProvider.notifier).updateHistory(key, history);
+    };
   }
 }

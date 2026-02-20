@@ -102,18 +102,19 @@ regardless of whether it was still streaming.
 │                       Provider Layer                            │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │              ActiveRunNotifier (modified)                 │   │
-│  │  - Embeds RunRegistry, exposes via registry getter       │   │
+│  │  - Owns RunRegistry via constructor injection            │   │
+│  │  - Injects OnRunCompleted callback for cache updates     │   │
 │  │  - Syncs current handle on room/thread navigation        │   │
 │  │  - Exposes state for current thread only                 │   │
 │  └──────────────────────────┬───────────────────────────────┘   │
 │                             │                                   │
-│                             │ owns                              │
+│                             │ uses                              │
 │                             ▼                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                       Service Layer                             │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    RunRegistry                            │   │
-│  │  - Map<RunKey, RunHandle>                                │   │
+│  │  - Map<ThreadKey, RunHandle>                                │   │
 │  │  - Manages run lifecycle                                 │   │
 │  │  - Broadcasts Stream<RunLifecycleEvent>                  │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -129,7 +130,7 @@ regardless of whether it was still streaming.
 
 ### Key Components
 
-**RunKey:** `typedef RunKey = ({String roomId, String threadId})` — a named
+**ThreadKey:** `typedef ThreadKey = ({String roomId, String threadId})` — a named
 record providing a type-safe composite identifier with value equality.
 Used as the map key in RunRegistry, the identity field in RunHandle and
 RunLifecycleEvent. Convenience getters on RunHandle and RunLifecycleEvent
@@ -138,7 +139,7 @@ indirection.
 
 **RunHandle:** Encapsulates resources for a single run:
 
-- `RunKey key` for identity (with `roomId`/`threadId` convenience getters)
+- `ThreadKey key` for identity (with `roomId`/`threadId` convenience getters)
 - `String runId` — backend-generated run ID
 - `CancelToken` for cancellation
 - `StreamSubscription<BaseEvent>` for the event stream
@@ -147,21 +148,24 @@ indirection.
 - Current `ActiveRunState` (Idle, Running, Completed)
 - `bool isActive` — whether the run is currently running
 
-**RunRegistry:** Pure Dart class managing multiple runs:
+**RunRegistry:** Pure Dart service managing multiple runs:
 
-- `Map<RunKey, RunHandle>` with type-safe record keys
+- `Map<ThreadKey, RunHandle>` with type-safe record keys
 - `registerRun()` adds a RunHandle and emits `RunStarted`
 - `completeRun()` atomically sets terminal state and emits `RunCompleted`
-- `removeRun(RunKey)` removes a run and disposes its resources
-- `getRunState(RunKey)` returns the current state for a run
+- `removeRun(ThreadKey)` removes a run and disposes its resources
+- `getRunState(ThreadKey)` returns the current state for a run
 - `Stream<RunLifecycleEvent>` broadcasts all lifecycle events unconditionally
+- `OnRunCompleted? onRunCompleted` — constructor-injected callback for cache updates
 
 **ActiveRunNotifier (modified):**
 
 - Removes thread navigation listener (slice 1)
-- Embeds `RunRegistry` as a field; exposes via `registry` getter (slice 4)
-- Creates `RunHandle` in `startRun()` and registers with embedded registry
+- Owns `RunRegistry` as a field, exposes via `registry` getter (slice 4)
+- Creates `RunHandle` in `startRun()` and registers with registry
 - Syncs `_currentHandle` and exposed state on room/thread navigation (slice 6)
+- Passes `_buildCacheUpdater()` via `RunRegistry` constructor (slice 8)
+- Subscribes to `registry.lifecycleEvents` for unread indicators (slice 9)
 - State reflects current thread only
 
 ### Lifecycle Events
@@ -170,7 +174,7 @@ indirection.
 @immutable
 sealed class RunLifecycleEvent {
   const RunLifecycleEvent({required this.key});
-  final RunKey key;
+  final ThreadKey key;
   String get roomId => key.roomId;
   String get threadId => key.threadId;
 }
@@ -197,7 +201,7 @@ act on. This keeps the registry a faithful event bus — it reports what
 happened without encoding business policy about which events are
 "interesting."
 
-Events use `RunKey` as their identity field with convenience getters for
+Events use `ThreadKey` as their identity field with convenience getters for
 `roomId` and `threadId`. This gives the registry a type-safe map key
 (record value equality, no string concatenation) while keeping consumer
 access clean (`event.roomId` instead of `event.key.roomId`).
@@ -208,13 +212,13 @@ intentionally deferred for separate UX discussion.
 
 ## Acceptance Criteria
 
-- [ ] User can navigate away from thread with active run; run continues.
-- [ ] User can return to thread; sees streamed messages.
-- [ ] User can start runs in multiple threads concurrently.
-- [ ] Background run completion updates message cache.
-- [ ] Lifecycle events are broadcast for background awareness.
-- [ ] Runs persist across room navigation.
-- [ ] All existing tests pass or are updated appropriately.
+- [x] User can navigate away from thread with active run; run continues.
+- [x] User can return to thread; sees streamed messages.
+- [x] User can start runs in multiple threads concurrently.
+- [x] Background run completion updates message cache.
+- [x] Lifecycle events are broadcast for background awareness.
+- [x] Runs persist across room navigation.
+- [x] All existing tests pass or are updated appropriately.
 
 ## UI Notification Design
 

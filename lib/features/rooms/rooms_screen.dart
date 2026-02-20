@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:soliplex_client/soliplex_client.dart';
+
 import 'package:soliplex_frontend/core/logging/loggers.dart';
 import 'package:soliplex_frontend/core/providers/rooms_provider.dart';
+import 'package:soliplex_frontend/core/providers/unread_runs_provider.dart';
 import 'package:soliplex_frontend/design/tokens/breakpoints.dart';
 import 'package:soliplex_frontend/design/tokens/spacing.dart';
 import 'package:soliplex_frontend/features/rooms/widgets/room_grid_card.dart';
@@ -64,6 +67,7 @@ class RoomsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final roomsAsync = ref.watch(filteredRoomsProvider);
     final isGridView = ref.watch(isGridViewProvider);
+    final unreadRuns = ref.watch(unreadRunsProvider);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -145,6 +149,10 @@ class RoomsScreen extends ConsumerWidget {
                                               aspectRatio: 1.25,
                                               child: RoomGridCard(
                                                 room: rowRooms[i],
+                                                unreadCount: unreadRuns
+                                                    .unreadCountForRoom(
+                                                  rowRooms[i].id,
+                                                ),
                                                 onTap: () => navigateToRoom(
                                                   rowRooms[i],
                                                 ),
@@ -175,6 +183,8 @@ class RoomsScreen extends ConsumerWidget {
                             ),
                             child: RoomListTile(
                               room: room,
+                              unreadCount:
+                                  unreadRuns.unreadCountForRoom(room.id),
                               onTap: () => navigateToRoom(room),
                             ),
                           ),
