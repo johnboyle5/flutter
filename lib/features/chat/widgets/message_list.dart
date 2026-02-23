@@ -1,10 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:soliplex_client/soliplex_client.dart'
-    show AwaitingText, ChatMessage, ChatUser, TextMessage, TextStreaming;
+    show
+        AwaitingText,
+        ChatMessage,
+        ChatUser,
+        FeedbackType,
+        TextMessage,
+        TextStreaming;
+import 'package:soliplex_frontend/core/logging/loggers.dart';
 import 'package:soliplex_frontend/core/models/active_run_state.dart';
 import 'package:soliplex_frontend/core/providers/active_run_provider.dart';
+import 'package:soliplex_frontend/core/providers/api_provider.dart';
+import 'package:soliplex_frontend/core/providers/rooms_provider.dart';
 import 'package:soliplex_frontend/core/providers/source_references_provider.dart';
+import 'package:soliplex_frontend/core/providers/threads_provider.dart';
 import 'package:soliplex_frontend/design/theme/theme_extensions.dart';
 import 'package:soliplex_frontend/design/tokens/spacing.dart';
 import 'package:soliplex_frontend/features/chat/widgets/chat_message_widget.dart';
@@ -280,6 +292,36 @@ class _MessageListState extends ConsumerState<MessageList> {
               sourceReferencesForUserMessageProvider(userMessageId),
             );
 
+            void Function(FeedbackType, String?)? onFeedbackSubmit;
+            if (userMessageId != null) {
+              final roomId = ref.read(currentRoomIdProvider);
+              final threadId = ref.read(currentThreadIdProvider);
+              final runId = ref.read(
+                runIdForUserMessageProvider(userMessageId),
+              );
+              final api = ref.read(apiProvider);
+              onFeedbackSubmit = (FeedbackType feedback, String? reason) {
+                if (runId == null || roomId == null || threadId == null) return;
+                unawaited(
+                  api
+                      .submitFeedback(
+                    roomId,
+                    threadId,
+                    runId,
+                    feedback,
+                    reason: reason,
+                  )
+                      .catchError((Object e, StackTrace st) {
+                    Loggers.chat.error(
+                      'Feedback submission failed',
+                      error: e,
+                      stackTrace: st,
+                    );
+                  }),
+                );
+              };
+            }
+
             final child = ChatMessageWidget(
               key: ValueKey(message.id),
               message: message,
@@ -287,6 +329,7 @@ class _MessageListState extends ConsumerState<MessageList> {
               isThinkingStreaming:
                   isSyntheticMessage && computation.isThinkingStreaming,
               sourceReferences: sourceRefs,
+              onFeedbackSubmit: onFeedbackSubmit,
             );
 
             if (widget.maxContentWidth == null) return child;

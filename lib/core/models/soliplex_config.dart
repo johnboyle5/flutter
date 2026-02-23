@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:soliplex_frontend/core/models/consent_notice.dart';
 import 'package:soliplex_frontend/core/models/features.dart';
 import 'package:soliplex_frontend/core/models/logo_config.dart';
 import 'package:soliplex_frontend/core/models/route_config.dart';
@@ -36,6 +37,7 @@ class SoliplexConfig {
     this.appName = 'Soliplex',
     this.defaultBackendUrl = 'http://localhost:8000',
     this.oauthRedirectScheme,
+    this.consentNotice,
     this.features = const Features(),
     this.theme = const ThemeConfig(),
     this.routes = const RouteConfig(),
@@ -82,6 +84,12 @@ class SoliplexConfig {
   /// Theme configuration for light and dark mode colors.
   final ThemeConfig theme;
 
+  /// Consent-to-monitoring notice shown before login.
+  ///
+  /// When non-null, users must acknowledge this notice before seeing
+  /// login options. Used by regulated deployments.
+  final ConsentNotice? consentNotice;
+
   /// Route configuration for navigation behavior.
   final RouteConfig routes;
 
@@ -108,6 +116,7 @@ class SoliplexConfig {
     String? defaultBackendUrl,
     String? oauthRedirectScheme,
     LogoConfig? logo,
+    ConsentNotice? consentNotice,
     Features? features,
     ThemeConfig? theme,
     RouteConfig? routes,
@@ -119,6 +128,7 @@ class SoliplexConfig {
       defaultBackendUrl: defaultBackendUrl ?? this.defaultBackendUrl,
       oauthRedirectScheme: oauthRedirectScheme ?? this.oauthRedirectScheme,
       logo: logo ?? this.logo,
+      consentNotice: consentNotice ?? this.consentNotice,
       features: features ?? this.features,
       theme: theme ?? this.theme,
       routes: routes ?? this.routes,
@@ -136,6 +146,7 @@ class SoliplexConfig {
           defaultBackendUrl == other.defaultBackendUrl &&
           oauthRedirectScheme == other.oauthRedirectScheme &&
           logo == other.logo &&
+          consentNotice == other.consentNotice &&
           features == other.features &&
           theme == other.theme &&
           routes == other.routes &&
@@ -148,6 +159,7 @@ class SoliplexConfig {
         defaultBackendUrl,
         oauthRedirectScheme,
         logo,
+        consentNotice,
         features,
         theme,
         routes,
@@ -161,6 +173,7 @@ class SoliplexConfig {
       'defaultBackendUrl: $defaultBackendUrl, '
       'oauthRedirectScheme: $oauthRedirectScheme, '
       'logo: $logo, '
+      'consentNotice: $consentNotice, '
       'features: $features, '
       'theme: $theme, '
       'routes: $routes, '
