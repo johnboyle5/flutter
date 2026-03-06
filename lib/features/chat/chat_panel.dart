@@ -105,12 +105,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 },
               ),
 
-              // Status indicator (above input, shown only when streaming)
+              // Status indicator (above input, shown when running)
               if (isStreaming)
                 Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxContentWidth),
-                    child: StatusIndicator(streaming: runState.streaming),
+                    child: StatusIndicator(runState: runState),
                   ),
                 ),
 
