@@ -27,26 +27,29 @@ final isGridViewProvider = NotifierProvider<IsGridViewNotifier, bool>(
   IsGridViewNotifier.new,
 );
 
-class RoomSearchQueryNotifier extends Notifier<String> {
+/// Screen displaying list of available rooms.
+///
+/// Returns body content only; AppShell wrapper is provided by the router.
+class RoomsScreen extends ConsumerStatefulWidget {
+  const RoomsScreen({super.key});
+
   @override
-  String build() => '';
-
-  String get query => state;
-  set query(String value) => state = value;
-
-  void clear() => state = '';
+  ConsumerState<RoomsScreen> createState() => _RoomsScreenState();
 }
 
-final roomSearchQueryProvider =
-    NotifierProvider<RoomSearchQueryNotifier, String>(
-  RoomSearchQueryNotifier.new,
-);
+class _RoomsScreenState extends ConsumerState<RoomsScreen> {
+  String _searchQuery = '';
 
-final filteredRoomsProvider = Provider<AsyncValue<List<Room>>>((ref) {
-  final roomsAsync = ref.watch(roomsProvider);
-  final query = ref.watch(roomSearchQueryProvider).toLowerCase().trim();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.invalidate(roomsProvider);
+    });
+  }
 
-  return roomsAsync.whenData((rooms) {
+  List<Room> _filterRooms(List<Room> rooms) {
+    final query = _searchQuery.toLowerCase().trim();
     if (query.isEmpty) return rooms;
 
     return rooms.where((room) {
@@ -54,18 +57,11 @@ final filteredRoomsProvider = Provider<AsyncValue<List<Room>>>((ref) {
           (room.hasDescription &&
               room.description.toLowerCase().contains(query));
     }).toList();
-  });
-});
-
-/// Screen displaying list of available rooms.
-///
-/// Returns body content only; AppShell wrapper is provided by the router.
-class RoomsScreen extends ConsumerWidget {
-  const RoomsScreen({super.key});
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final roomsAsync = ref.watch(filteredRoomsProvider);
+  Widget build(BuildContext context) {
+    final roomsAsync = ref.watch(roomsProvider);
     final isGridView = ref.watch(isGridViewProvider);
     final unreadRuns = ref.watch(unreadRunsProvider);
 
@@ -85,11 +81,11 @@ class RoomsScreen extends ConsumerWidget {
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxContentWidth),
                 child: RoomSearchToolbar(
-                  query: ref.watch(roomSearchQueryProvider),
+                  query: _searchQuery,
                   isGridView: isGridView,
                   showViewToggle: !isMobile,
                   onQueryChanged: (value) =>
-                      ref.read(roomSearchQueryProvider.notifier).query = value,
+                      setState(() => _searchQuery = value),
                   onToggleView: () =>
                       ref.read(isGridViewProvider.notifier).toggle(),
                 ),
@@ -99,8 +95,9 @@ class RoomsScreen extends ConsumerWidget {
             Expanded(
               child: roomsAsync.when(
                 data: (rooms) {
-                  Loggers.room.debug('Rooms loaded: ${rooms.length}');
-                  if (rooms.isEmpty) {
+                  final filtered = _filterRooms(rooms);
+                  Loggers.room.debug('Rooms loaded: ${filtered.length}');
+                  if (filtered.isEmpty) {
                     return const EmptyState(
                       message: 'No rooms available',
                       icon: Icons.meeting_room_outlined,
@@ -120,15 +117,15 @@ class RoomsScreen extends ConsumerWidget {
                     final cardsPerRow =
                         width >= SoliplexBreakpoints.desktop ? 3 : 2;
                     final rowCount =
-                        (rooms.length + cardsPerRow - 1) ~/ cardsPerRow;
+                        (filtered.length + cardsPerRow - 1) ~/ cardsPerRow;
 
                     return ListView.builder(
                       itemCount: rowCount,
                       itemBuilder: (context, rowIndex) {
                         final start = rowIndex * cardsPerRow;
                         final end =
-                            (start + cardsPerRow).clamp(0, rooms.length);
-                        final rowRooms = rooms.sublist(start, end);
+                            (start + cardsPerRow).clamp(0, filtered.length);
+                        final rowRooms = filtered.sublist(start, end);
 
                         return Center(
                           child: ConstrainedBox(
@@ -170,9 +167,9 @@ class RoomsScreen extends ConsumerWidget {
                   }
 
                   return ListView.builder(
-                    itemCount: rooms.length,
+                    itemCount: filtered.length,
                     itemBuilder: (context, index) {
-                      final room = rooms[index];
+                      final room = filtered[index];
                       return Center(
                         child: ConstrainedBox(
                           constraints:
