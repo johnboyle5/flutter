@@ -140,18 +140,26 @@ class _ChatInputState extends ConsumerState<ChatInput> {
     final hasRoom = roomId != null;
     final selectedDocs = widget.selectedDocuments;
 
-    // Check if room has documents for picker button state
-    // Only disable when we KNOW the room is empty (not during loading/error)
     final documentsAsync =
         hasRoom ? ref.watch(documentsProvider(roomId)) : null;
-    final isEmptyRoom = documentsAsync?.maybeWhen(
-          data: (docs) => docs.isEmpty,
-          orElse: () => false,
-        ) ??
-        false;
-    final pickerEnabled = canSend && !isEmptyRoom;
-    final pickerTooltip =
-        isEmptyRoom ? 'No documents in this room' : 'Select document';
+    final (:pickerEnabled, :pickerTooltip, :hasDocumentError) =
+        switch (documentsAsync) {
+      AsyncData(value: final docs) when docs.isEmpty => (
+          pickerEnabled: false,
+          pickerTooltip: 'No documents in this room',
+          hasDocumentError: false,
+        ),
+      AsyncError() => (
+          pickerEnabled: canSend,
+          pickerTooltip: 'Could not load documents',
+          hasDocumentError: true,
+        ),
+      _ => (
+          pickerEnabled: canSend,
+          pickerTooltip: 'Select document',
+          hasDocumentError: false,
+        ),
+    };
 
     final showChips = widget.showSuggestions && widget.suggestions.isNotEmpty;
 
@@ -231,7 +239,12 @@ class _ChatInputState extends ConsumerState<ChatInput> {
                 IconButton(
                   tooltip: pickerTooltip,
                   onPressed: pickerEnabled ? _showDocumentPicker : null,
-                  icon: const Icon(Icons.filter_alt),
+                  icon: Icon(
+                    Icons.filter_alt,
+                    color: hasDocumentError
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
                 ),
               const SizedBox(width: 8),
               // Text field
@@ -438,13 +451,22 @@ class _DocumentPickerDialogState extends ConsumerState<_DocumentPickerDialog> {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stackTrace) => SingleChildScrollView(
-            child: ErrorDisplay(
-              error: error,
-              stackTrace: stackTrace,
-              onRetry: () {
-                ref.read(documentsProvider(widget.roomId).notifier).retry();
-              },
+          error: (error, stackTrace) => LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: ErrorDisplay(
+                  error: error,
+                  stackTrace: stackTrace,
+                  onRetry: () {
+                    ref
+                        .read(
+                          documentsProvider(widget.roomId).notifier,
+                        )
+                        .retry();
+                  },
+                ),
+              ),
             ),
           ),
         ),
