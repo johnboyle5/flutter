@@ -3,7 +3,7 @@ description: Cross-platform Flutter frontend for Soliplex AI-powered RAG system
 publish_to: 'none'
 # To update version, run:
 # dart run tool/bump_version.dart <major|minor|patch|build>
-version: 0.64.4+18
+version: 0.64.8+22
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -21,6 +21,7 @@ dependencies:
   flutter_markdown_plus: ^1.0.7
   flutter_riverpod: ^3.1.0
   flutter_secure_storage: ^10.0.0
+  flutter_svg: ^2.2.4
   go_router: ^17.1.0
   google_fonts: ^6.2.1
   http: ^1.2.0
